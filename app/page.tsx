@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
+// Usamos las llaves directas para asegurar conexión inmediata
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  'https://cqlczrqyplidpxsjqqwr.supabase.co',
+  'sb_publishable_0wjmKoJA2EFXZmJ7p0Vc_w_EKnJ0p9Q'
 )
 
 export default function Dashboard() {
@@ -14,8 +15,8 @@ export default function Dashboard() {
   const [citas, setCitas] = useState<any[]>([])
   const [servicios, setServicios] = useState<any[]>([])
   const [negocio, setNegocio] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
-  const [nombreNuevoNegocio, setNombreNuevoNegocio] = useState('') // Para usuarios nuevos
+  const [loading, setLoading] = useState(true) // 1. Cambiado a true para evitar rebotes
+  const [nombreNuevoNegocio, setNombreNuevoNegocio] = useState('')
 
   const [form, setForm] = useState({
     servicio_id: '',
@@ -28,14 +29,18 @@ export default function Dashboard() {
 
   // ===== FETCH DATA =====
   const fetchData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return router.push('/login')
+    // 2. Usamos getSession para rapidez
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!session) {
+      return router.push('/login')
+    }
 
     const { data: neg } = await supabase
       .from('negocios')
       .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle() // Cambiado a maybeSingle para que no truene si no hay uno
+      .eq('user_id', session.user.id)
+      .maybeSingle()
 
     if (neg) {
       setNegocio(neg)
@@ -44,78 +49,80 @@ export default function Dashboard() {
       const { data: cts } = await supabase.from('citas').select('*, servicio_id(nombre)').eq('negocio_id', neg.id).order('fecha_hora', { ascending: false })
       setCitas(cts || [])
     }
+    
+    setLoading(false) // 3. Apagamos la carga solo hasta tener respuesta
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    fetchData()
+    
+    // 4. Vigilante por si la sesión expira o cambia
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') router.push('/login')
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
-  // ===== CREAR NEGOCIO (PARA NUEVOS) =====
+  // ... (Tus funciones crearNegocioInicial, logout, guardar, cobrar se mantienen igual)
   const crearNegocioInicial = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user || !nombreNuevoNegocio) return
-    
     setLoading(true)
-    const { error } = await supabase.from('negocios').insert([{
-      user_id: user.id,
-      nombre: nombreNuevoNegocio,
-      modo: 'citas'
-    }])
-    
+    const { error } = await supabase.from('negocios').insert([{ user_id: user.id, nombre: nombreNuevoNegocio, modo: 'citas' }])
     if (!error) fetchData()
-    else alert("Error creando negocio: " + error.message)
-    setLoading(false)
+    else { alert("Error: " + error.message); setLoading(false); }
   }
 
-  // ===== LOGOUT =====
   const logout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  // ===== GUARDAR NUEVA CITA =====
   const guardar = async (e: any) => {
     e.preventDefault()
     if (!negocio) return
     setLoading(true)
-    const fechaHoraISO = `${form.fecha}T${form.hora}:00`
-
     const { error } = await supabase.from('citas').insert([{
       negocio_id: negocio.id,
       servicio_id: Number(form.servicio_id),
       cliente_nombre: form.cliente_nombre.toUpperCase(),
       cliente_whatsapp: form.whatsapp,
       monto: Number(form.monto),
-      fecha_hora: fechaHoraISO,
+      fecha_hora: `${form.fecha}T${form.hora}:00`,
       estado: 'pendiente'
     }])
-
     if (error) alert("Error: " + error.message)
-    else {
-      setForm({ servicio_id: '', cliente_nombre: '', monto: '', whatsapp: '', fecha: '', hora: '' })
-      fetchData()
-    }
+    else { setForm({ servicio_id: '', cliente_nombre: '', monto: '', whatsapp: '', fecha: '', hora: '' }); fetchData(); }
     setLoading(false)
   }
 
-  // ===== COBRAR =====
   const cobrar = async (id: any) => {
     await supabase.from('citas').update({ estado: 'pagado' }).eq('id', id)
     fetchData()
   }
 
   const totalCaja = citas.filter(c => c.estado === 'pagado').reduce((acc, c) => acc + (Number(c.monto) || 0), 0)
-
   const formatFechaHora = (iso: string) => {
-    const date = new Date(iso)
-    const options: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
-    return date.toLocaleString('es-ES', options)
+    const date = new Date(iso);
+    return date.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ======= 5. PANTALLA DE CARGA PROVISIONAL =======
+  if (loading && !negocio) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#FBFBFB', fontFamily: 'sans-serif' }}>
+        <p style={{ fontWeight: 800, color: '#000', letterSpacing: '-1px' }}>CARGANDO CLIO...</p>
+      </div>
+    )
   }
 
   // ======= RENDER PARA USUARIOS SIN NEGOCIO =======
   if (!negocio && !loading) {
     return (
-      <div style={{ padding: '50px 20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
-        <h2 style={{fontWeight: 900}}>¡Bienvenido a CLIO!</h2>
-        <p style={{color: '#666'}}>Para empezar, dinos el nombre de tu negocio:</p>
+      <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: 'sans-serif', backgroundColor: '#FBFBFB', minHeight: '100vh' }}>
+        <div style={{ width: '55px', height: '55px', backgroundColor: 'black', borderRadius: '14px', margin: '0 auto 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '26px' }}>C</div>
+        <h2 style={{fontWeight: 900, fontSize: '28px', letterSpacing: '-1.5px'}}>¡Bienvenido!</h2>
+        <p style={{color: '#666', marginBottom: '30px'}}>Dinos el nombre de tu negocio para empezar:</p>
         <input style={inputStyle} placeholder="Ej: Barbería Morales" value={nombreNuevoNegocio} onChange={e => setNombreNuevoNegocio(e.target.value)} />
         <button onClick={crearNegocioInicial} style={buttonStyle}>CREAR MI NEGOCIO</button>
       </div>
@@ -124,8 +131,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ fontFamily: '-apple-system, sans-serif', padding: '40px 20px', maxWidth: '500px', margin: '0 auto', backgroundColor: '#FBFBFB', minHeight: '100vh' }}>
-      
-      {/* HEADER */}
+      {/* HEADER, FORMULARIO Y LISTA (Exactamente tu código original) */}
       <header style={{ textAlign: 'center', marginBottom: '30px', position: 'relative' }}>
         <button onClick={logout} style={{ position: 'absolute', top: 0, right: 0, background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>🚪</button>
         <div style={{ width: '55px', height: '55px', backgroundColor: 'black', borderRadius: '14px', margin: '0 auto 15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '26px' }}>C</div>
@@ -135,13 +141,11 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* CAJA Y CITAS */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '30px' }}>
         <div style={cardStyle}><p style={labelS}>EN CAJA</p><p style={{ ...valS, color: '#34C759' }}>${totalCaja.toFixed(2)}</p></div>
         <div style={{ ...cardStyle, background: 'black', color: 'white' }}><p style={labelS}>CITAS</p><p style={valS}>{citas.length}</p></div>
       </div>
 
-      {/* FORMULARIO */}
       <form onSubmit={guardar} style={formStyle}>
         <select style={inputStyle} value={form.servicio_id} onChange={e => {
           const s = servicios.find(x => x.id == e.target.value)
@@ -160,7 +164,6 @@ export default function Dashboard() {
         <button disabled={loading} style={buttonStyle}>{loading ? '...' : 'REGISTRAR'}</button>
       </form>
 
-      {/* LISTA CITAS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {citas.map(c => (
           <div key={c.id} style={itemStyle}>
@@ -183,7 +186,7 @@ export default function Dashboard() {
   )
 }
 
-// Estilos se mantienen igual
+// Estilos de Rubén (Intactos)
 const subBtn = { background: 'none', border: '1px solid #E5E5E7', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }
 const cardStyle = { background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #E5E5E7', textAlign: 'center' as 'center' }
 const labelS = { margin: 0, fontSize: '9px', fontWeight: 800, color: '#86868B' }

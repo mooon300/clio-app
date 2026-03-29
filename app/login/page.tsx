@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 
-// Llaves directas para que funcione sí o sí en Vercel
+// Conexión directa para evitar errores de carga
 const supabase = createClient(
   'https://cqlczrqyplidpxsjqqwr.supabase.co',
   'sb_publishable_0wjmKoJA2EFXZmJ7p0Vc_w_EKnJ0p9Q'
@@ -15,21 +15,40 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [isRegistering, setIsRegistering] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
 
-  // ====== FUNCIÓN PARA LOGIN / REGISTRO ======
-  const handleSubmit = async (e: any) => {
+  const handleAuth = async (e: any) => {
     e.preventDefault()
     setLoading(true)
+    setErrorMsg('')
 
-    if (isRegistering) {
-      const { error } = await supabase.auth.signUp({ email, password })
-      if (error) alert("Error: " + error.message)
-      else alert("¡Registro exitoso! Ahora cambia a 'Entrar' para iniciar sesión.")
+    // 1. Intentamos iniciar sesión
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    // 2. Si el error es que el usuario no existe, lo registramos automáticamente
+    if (signInError && (signInError.message.includes('Invalid login credentials') || signInError.status === 400)) {
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+      })
+
+      if (signUpError) {
+        setErrorMsg('Revisa tus datos o conexión')
+        setLoading(false)
+        return
+      }
+      
+      // Tras registrarse, Supabase loguea en automático, mandamos al Dash
+      router.push('/')
+    } else if (signInError) {
+      // Si es otro tipo de error (contraseña mal escrita de un usuario real)
+      setErrorMsg('Credenciales incorrectas')
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) alert("Error: " + error.message)
-      else router.push('/')
+      // Si todo bien, adentro
+      router.push('/')
     }
     setLoading(false)
   }
@@ -44,21 +63,8 @@ export default function LoginPage() {
 
       <div style={{ background: '#FFF', padding: '35px', borderRadius: '35px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
         
-        {/* Selector de Modo con colores fuertes */}
-        <div style={{ display: 'flex', background: '#F2F2F7', borderRadius: '15px', padding: '5px', marginBottom: '25px' }}>
-          <button 
-            type="button"
-            onClick={() => setIsRegistering(false)} 
-            style={{ ...tabBtn, backgroundColor: !isRegistering ? '#000' : 'transparent', color: !isRegistering ? '#FFF' : '#666' }}
-          >Entrar</button>
-          <button 
-            type="button"
-            onClick={() => setIsRegistering(true)} 
-            style={{ ...tabBtn, backgroundColor: isRegistering ? '#000' : 'transparent', color: isRegistering ? '#FFF' : '#666' }}
-          >Registrar</button>
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          
           <input 
             type="email" 
             placeholder="Correo electrónico" 
@@ -77,8 +83,11 @@ export default function LoginPage() {
             required 
           />
           
+          {/* Error elegante en pantalla, sin ventanas emergentes */}
+          {errorMsg && <p style={{ color: '#FF3B30', fontSize: '11px', textAlign: 'center', fontWeight: 800, margin: '5px 0' }}>{errorMsg.toUpperCase()}</p>}
+
           <button disabled={loading} style={btnBlack}>
-            {loading ? 'PROCESANDO...' : (isRegistering ? 'CREAR CUENTA' : 'INICIAR SESIÓN')}
+            {loading ? 'CONECTANDO...' : 'ENTRAR'}
           </button>
         </form>
       </div>
@@ -88,7 +97,29 @@ export default function LoginPage() {
   )
 }
 
-// ====== ESTILOS REFORZADOS ======
-const tabBtn = { flex: 1, border: 'none', padding: '12px', borderRadius: '12px', fontSize: '14px', fontWeight: 800, cursor: 'pointer', transition: '0.3s' }
-const inputStyle = { padding: '18px', borderRadius: '16px', border: '2px solid #EEE', fontSize: '16px', fontWeight: 600, outline: 'none', width: '100%', boxSizing: 'border-box' as 'border-box', color: '#000', backgroundColor: '#FFF' }
-const btnBlack = { padding: '18px', background: 'black', color: 'white', border: 'none', borderRadius: '18px', fontWeight: 800, fontSize: '14px', cursor: 'pointer', letterSpacing: '1px', marginTop: '10px' }
+// ====== ESTILOS REFORZADOS (Texto Negro Intenso) ======
+const inputStyle = { 
+  padding: '18px', 
+  borderRadius: '16px', 
+  border: '2px solid #EEE', 
+  fontSize: '16px', 
+  fontWeight: 600, 
+  outline: 'none', 
+  width: '100%', 
+  boxSizing: 'border-box' as 'border-box', 
+  color: '#000', 
+  backgroundColor: '#FFF' 
+}
+
+const btnBlack = { 
+  padding: '18px', 
+  background: 'black', 
+  color: 'white', 
+  border: 'none', 
+  borderRadius: '18px', 
+  fontWeight: 800, 
+  fontSize: '14px', 
+  cursor: 'pointer', 
+  letterSpacing: '1px', 
+  marginTop: '5px' 
+}
