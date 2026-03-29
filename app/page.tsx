@@ -235,3 +235,4 @@ const buttonStyle = { width: '100%', padding: '18px', background: 'black', color
 const itemStyle = { background: 'white', padding: '20px', borderRadius: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #EEE', boxShadow: '0 2px 10px rgba(0,0,0,0.01)' }
 const waBtn = { background: '#25D366', border: 'none', width: '38px', height: '38px', borderRadius: '12px', cursor: 'pointer', fontSize: '20px', color: 'white' }
 const payBtn = { background: '#FF9500', border: 'none', padding: '10px 15px', borderRadius: '12px', fontSize: '10px', fontWeight: 900, cursor: 'pointer', color: 'white', letterSpacing: '1px' }
+//cambio finall
