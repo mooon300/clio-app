@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [servicios, setServicios] = useState<any[]>([])
   const [negocio, setNegocio] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const [nombreNuevoNegocio, setNombreNuevoNegocio] = useState('') // Para usuarios nuevos
 
   const [form, setForm] = useState({
     servicio_id: '',
@@ -34,28 +35,35 @@ export default function Dashboard() {
       .from('negocios')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle() // Cambiado a maybeSingle para que no truene si no hay uno
 
     if (neg) {
       setNegocio(neg)
-
-      const { data: servs } = await supabase
-        .from('servicios')
-        .select('*')
-        .eq('negocio_id', neg.id)
+      const { data: servs } = await supabase.from('servicios').select('*').eq('negocio_id', neg.id)
       setServicios(servs || [])
-
-      const { data: cts } = await supabase
-        .from('citas')
-        .select('*, servicio_id(nombre)')
-        .eq('negocio_id', neg.id)
-        .order('fecha_hora', { ascending: false })
-
+      const { data: cts } = await supabase.from('citas').select('*, servicio_id(nombre)').eq('negocio_id', neg.id).order('fecha_hora', { ascending: false })
       setCitas(cts || [])
     }
   }
 
   useEffect(() => { fetchData() }, [])
+
+  // ===== CREAR NEGOCIO (PARA NUEVOS) =====
+  const crearNegocioInicial = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user || !nombreNuevoNegocio) return
+    
+    setLoading(true)
+    const { error } = await supabase.from('negocios').insert([{
+      user_id: user.id,
+      nombre: nombreNuevoNegocio,
+      modo: 'citas'
+    }])
+    
+    if (!error) fetchData()
+    else alert("Error creando negocio: " + error.message)
+    setLoading(false)
+  }
 
   // ===== LOGOUT =====
   const logout = async () => {
@@ -94,26 +102,34 @@ export default function Dashboard() {
     fetchData()
   }
 
-  // ===== TOTAL CAJA =====
-  const totalCaja = citas
-    .filter(c => c.estado === 'pagado')
-    .reduce((acc, c) => acc + (Number(c.monto) || 0), 0)
+  const totalCaja = citas.filter(c => c.estado === 'pagado').reduce((acc, c) => acc + (Number(c.monto) || 0), 0)
 
-  // ===== FORMATEAR FECHA =====
   const formatFechaHora = (iso: string) => {
     const date = new Date(iso)
     const options: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
     return date.toLocaleString('es-ES', options)
   }
 
+  // ======= RENDER PARA USUARIOS SIN NEGOCIO =======
+  if (!negocio && !loading) {
+    return (
+      <div style={{ padding: '50px 20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
+        <h2 style={{fontWeight: 900}}>¡Bienvenido a CLIO!</h2>
+        <p style={{color: '#666'}}>Para empezar, dinos el nombre de tu negocio:</p>
+        <input style={inputStyle} placeholder="Ej: Barbería Morales" value={nombreNuevoNegocio} onChange={e => setNombreNuevoNegocio(e.target.value)} />
+        <button onClick={crearNegocioInicial} style={buttonStyle}>CREAR MI NEGOCIO</button>
+      </div>
+    )
+  }
+
   return (
     <div style={{ fontFamily: '-apple-system, sans-serif', padding: '40px 20px', maxWidth: '500px', margin: '0 auto', backgroundColor: '#FBFBFB', minHeight: '100vh' }}>
-
+      
       {/* HEADER */}
       <header style={{ textAlign: 'center', marginBottom: '30px', position: 'relative' }}>
         <button onClick={logout} style={{ position: 'absolute', top: 0, right: 0, background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>🚪</button>
         <div style={{ width: '55px', height: '55px', backgroundColor: 'black', borderRadius: '14px', margin: '0 auto 15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '26px' }}>C</div>
-        <h1 style={{ fontWeight: 900, fontSize: '32px', margin: 0, letterSpacing: '-1.5px' }}>{negocio?.nombre || 'CLIO'}</h1>
+        <h1 style={{ fontWeight: 900, fontSize: '32px', margin: 0, letterSpacing: '-1.5px' }}>{negocio?.nombre}</h1>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '10px' }}>
           <button onClick={() => router.push('/config')} style={subBtn}>⚙️ Configurar</button>
         </div>
@@ -163,12 +179,11 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
-
     </div>
   )
 }
 
-// ===== ESTILOS =====
+// Estilos se mantienen igual
 const subBtn = { background: 'none', border: '1px solid #E5E5E7', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }
 const cardStyle = { background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #E5E5E7', textAlign: 'center' as 'center' }
 const labelS = { margin: 0, fontSize: '9px', fontWeight: 800, color: '#86868B' }

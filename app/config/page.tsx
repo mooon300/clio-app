@@ -2,13 +2,20 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '../../lib/config' // ruta correcta al cliente Supabase
+import { createClient } from '@supabase/supabase-js'
+
+// Cliente directo para evitar errores de rutas externas
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function ConfigPage() {
   const router = useRouter()
   const [negocio, setNegocio] = useState<any>(null)
   const [servicios, setServicios] = useState<any[]>([])
   const [nuevoServicio, setNuevoServicio] = useState({ nombre: '', precio: '' })
+  const [loading, setLoading] = useState(false)
 
   // ====== Cargar datos del negocio y servicios ======
   const loadData = async () => {
@@ -19,9 +26,15 @@ export default function ConfigPage() {
       .from('negocios')
       .select('*')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle() 
 
     if (negError) return alert('Error cargando negocio: ' + negError.message)
+    
+    if (!neg) {
+      alert("Crea un negocio primero en el inicio")
+      return router.push('/')
+    }
+
     setNegocio(neg)
 
     const { data: servs } = await supabase
@@ -32,6 +45,20 @@ export default function ConfigPage() {
   }
 
   useEffect(() => { loadData() }, [])
+
+  // ====== Actualizar datos del negocio (Nombre/WhatsApp) ======
+  const actualizarNegocio = async (e: any) => {
+    e.preventDefault()
+    setLoading(true)
+    const { error } = await supabase
+      .from('negocios')
+      .update({ nombre: negocio.nombre, whatsapp: negocio.whatsapp })
+      .eq('id', negocio.id)
+    
+    if (error) alert(error.message)
+    else alert("¡Datos actualizados!")
+    setLoading(false)
+  }
 
   // ====== Agregar servicio ======
   const agregarServicio = async (e: any) => {
@@ -59,16 +86,39 @@ export default function ConfigPage() {
     else alert("Error eliminando servicio: " + error.message)
   }
 
-  if (!negocio) return <p style={{ textAlign:'center', padding:'50px' }}>Cargando configuración...</p>
+  if (!negocio) return <p style={{ textAlign:'center', padding:'50px', fontFamily: 'sans-serif' }}>Cargando configuración...</p>
 
   return (
-    <div style={{ fontFamily: '-apple-system, sans-serif', padding: '40px 20px', maxWidth: '450px', margin: '0 auto' }}>
-      <h1 style={{ fontWeight: 900, fontSize: '28px', letterSpacing: '-1px' }}>Configuración ⚙️</h1>
-      <p style={{ color: '#8E8E93', marginBottom: '30px' }}>Gestiona el menú de {negocio.nombre}</p>
+    <div style={{ fontFamily: '-apple-system, sans-serif', padding: '40px 20px', maxWidth: '450px', margin: '0 auto', minHeight: '100vh', backgroundColor: '#FBFBFB' }}>
+      
+      <header style={{ marginBottom: '30px' }}>
+        <h1 style={{ fontWeight: 900, fontSize: '28px', letterSpacing: '-1px', margin: 0 }}>Configuración ⚙️</h1>
+        <p style={{ color: '#8E8E93', fontSize: '14px' }}>Ajusta los detalles de tu negocio</p>
+      </header>
 
-      {/* Formulario Agregar Servicio */}
+      {/* SECCIÓN 1: DATOS DEL NEGOCIO */}
+      <form onSubmit={actualizarNegocio} style={formStyle}>
+        <h3 style={sectionTitle}>PERFIL DEL NEGOCIO</h3>
+        <input
+          style={inputStyle}
+          placeholder="Nombre del Negocio"
+          value={negocio.nombre}
+          onChange={e => setNegocio({ ...negocio, nombre: e.target.value })}
+          required
+        />
+        <input
+          style={inputStyle}
+          placeholder="WhatsApp del Negocio"
+          value={negocio.whatsapp}
+          onChange={e => setNegocio({ ...negocio, whatsapp: e.target.value })}
+          required
+        />
+        <button disabled={loading} style={{...btnStyle, background: '#007AFF'}}>GUARDAR CAMBIOS</button>
+      </form>
+
+      {/* SECCIÓN 2: FORMULARIO AGREGAR SERVICIO */}
       <form onSubmit={agregarServicio} style={formStyle}>
-        <h3 style={{ fontSize: '12px', color: '#8E8E93', marginBottom: '10px' }}>AGREGAR SERVICIO AL MENÚ</h3>
+        <h3 style={sectionTitle}>AÑADIR AL MENÚ</h3>
         <input
           style={inputStyle}
           placeholder="Ej: Corte de Caballero"
@@ -84,11 +134,12 @@ export default function ConfigPage() {
           onChange={e => setNuevoServicio({ ...nuevoServicio, precio: e.target.value })}
           required
         />
-        <button style={btnStyle}>AÑADIR AL MENÚ</button>
+        <button style={btnStyle}>AÑADIR SERVICIO</button>
       </form>
 
-      {/* Lista de Servicios */}
+      {/* SECCIÓN 3: LISTA DE SERVICIOS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <h3 style={sectionTitle}>TU MENÚ ACTUAL</h3>
         {servicios.map(s => (
           <div key={s.id} style={itemStyle}>
             <div>
@@ -100,10 +151,9 @@ export default function ConfigPage() {
         ))}
       </div>
 
-      {/* Botón volver */}
       <button
         onClick={() => router.push('/')}
-        style={{ width: '100%', marginTop: '30px', background: 'none', border: 'none', color: '#007AFF', fontWeight: 700, cursor: 'pointer' }}
+        style={{ width: '100%', marginTop: '40px', background: 'none', border: 'none', color: '#007AFF', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}
       >
         ← Volver al Dashboard
       </button>
@@ -111,13 +161,15 @@ export default function ConfigPage() {
   )
 }
 
-// ====== ESTILOS ======
+// ====== ESTILOS (Tus originales + mejoras) ======
+const sectionTitle = { fontSize: '11px', fontWeight: 800, color: '#8E8E93', marginBottom: '15px', letterSpacing: '1px' }
+
 const formStyle = {
   background: 'white',
   padding: '20px',
   borderRadius: '24px',
   border: '1px solid #E5E5E7',
-  marginBottom: '30px'
+  marginBottom: '20px'
 }
 
 const inputStyle = {
@@ -149,15 +201,16 @@ const itemStyle = {
   alignItems: 'center',
   padding: '15px',
   borderRadius: '20px',
-  background: '#F2F2F7'
+  background: 'white',
+  border: '1px solid #F2F2F7'
 }
 
 const btnDelete = {
-  background: '#FF3B30',
-  color: 'white',
+  background: '#FF3B3015',
+  color: '#FF3B30',
   border: 'none',
-  borderRadius: '8px',
-  padding: '5px 10px',
+  borderRadius: '10px',
+  padding: '8px 12px',
   fontSize: '10px',
   fontWeight: 800,
   cursor: 'pointer'

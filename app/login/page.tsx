@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/config' // cliente centralizado
 
@@ -8,6 +8,17 @@ export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // ====== ESTO ES LO QUE COMPLEMENTA EL LOGIN ======
+  // Detecta si el usuario ya entró (por el link del correo) y lo manda al Dash
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        router.push('/')
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [router])
 
   // ====== Login con OTP ======
   const login = async (e: any) => {
@@ -41,7 +52,7 @@ export default function LoginPage() {
   )
 }
 
-// ====== ESTILOS ======
+// ====== ESTILOS (Tus estilos originales) ======
 const inputStyle = {
   width: '100%',
   padding: '12px',
