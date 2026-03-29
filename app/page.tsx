@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 
-// Usamos las llaves directas para asegurar conexión inmediata
 const supabase = createClient(
   'https://cqlczrqyplidpxsjqqwr.supabase.co',
   'sb_publishable_0wjmKoJA2EFXZmJ7p0Vc_w_EKnJ0p9Q'
@@ -15,8 +14,9 @@ export default function Dashboard() {
   const [citas, setCitas] = useState<any[]>([])
   const [servicios, setServicios] = useState<any[]>([])
   const [negocio, setNegocio] = useState<any>(null)
-  const [loading, setLoading] = useState(true) // 1. Cambiado a true para evitar rebotes
+  const [loading, setLoading] = useState(true)
   const [nombreNuevoNegocio, setNombreNuevoNegocio] = useState('')
+  const [mostrarForm, setMostrarForm] = useState(false) // 1. Botón de "+" para el form
 
   const [form, setForm] = useState({
     servicio_id: '',
@@ -27,14 +27,10 @@ export default function Dashboard() {
     hora: ''
   })
 
-  // ===== FETCH DATA =====
   const fetchData = async () => {
-    // 2. Usamos getSession para rapidez
     const { data: { session } } = await supabase.auth.getSession()
     
-    if (!session) {
-      return router.push('/login')
-    }
+    if (!session) return router.push('/login')
 
     const { data: neg } = await supabase
       .from('negocios')
@@ -49,38 +45,20 @@ export default function Dashboard() {
       const { data: cts } = await supabase.from('citas').select('*, servicio_id(nombre)').eq('negocio_id', neg.id).order('fecha_hora', { ascending: false })
       setCitas(cts || [])
     }
-    
-    setLoading(false) // 3. Apagamos la carga solo hasta tener respuesta
+    setLoading(false)
   }
 
   useEffect(() => {
     fetchData()
-    
-    // 4. Vigilante por si la sesión expira o cambia
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') router.push('/login')
-    })
-    return () => subscription.unsubscribe()
   }, [])
-
-  // ... (Tus funciones crearNegocioInicial, logout, guardar, cobrar se mantienen igual)
-  const crearNegocioInicial = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user || !nombreNuevoNegocio) return
-    setLoading(true)
-    const { error } = await supabase.from('negocios').insert([{ user_id: user.id, nombre: nombreNuevoNegocio, modo: 'citas' }])
-    if (!error) fetchData()
-    else { alert("Error: " + error.message); setLoading(false); }
-  }
 
   const logout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  const guardar = async (e: any) => {
+  const guardarCita = async (e: any) => {
     e.preventDefault()
-    if (!negocio) return
     setLoading(true)
     const { error } = await supabase.from('citas').insert([{
       negocio_id: negocio.id,
@@ -92,108 +70,168 @@ export default function Dashboard() {
       estado: 'pendiente'
     }])
     if (error) alert("Error: " + error.message)
-    else { setForm({ servicio_id: '', cliente_nombre: '', monto: '', whatsapp: '', fecha: '', hora: '' }); fetchData(); }
+    else { 
+      setForm({ servicio_id: '', cliente_nombre: '', monto: '', whatsapp: '', fecha: '', hora: '' }); 
+      setMostrarForm(false); // Cerramos el form tras guardar
+      fetchData(); 
+    }
     setLoading(false)
   }
 
-  const cobrar = async (id: any) => {
+  const crearNegocioInicial = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user || !nombreNuevoNegocio) return
+    setLoading(true)
+    const { error } = await supabase.from('negocios').insert([{ user_id: user.id, nombre: nombreNuevoNegocio, modo: 'citas' }])
+    if (!error) fetchData()
+    else { alert("Error creando negocio: " + error.message); setLoading(false); }
+  }
+
+  const cobrarCita = async (id: any) => {
     await supabase.from('citas').update({ estado: 'pagado' }).eq('id', id)
     fetchData()
   }
 
   const totalCaja = citas.filter(c => c.estado === 'pagado').reduce((acc, c) => acc + (Number(c.monto) || 0), 0)
+  
   const formatFechaHora = (iso: string) => {
     const date = new Date(iso);
     return date.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
-  // ======= 5. PANTALLA DE CARGA PROVISIONAL =======
+  // ======= PANTALLA DE CARGA =======
   if (loading && !negocio) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#FBFBFB', fontFamily: 'sans-serif' }}>
-        <p style={{ fontWeight: 800, color: '#000', letterSpacing: '-1px' }}>CARGANDO CLIO...</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#F0F2F5', fontFamily: 'sans-serif' }}>
+        <p style={{ fontWeight: 800, color: '#000', letterSpacing: '-1px', fontSize: '18px' }}>CONECTANDO CON CLIO...</p>
       </div>
     )
   }
 
-  // ======= RENDER PARA USUARIOS SIN NEGOCIO =======
+  // ======= RENDER PARA USUARIOS SIN NEGOCIO (image_7.png Rediseñado) =======
   if (!negocio && !loading) {
     return (
-      <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: 'sans-serif', backgroundColor: '#FBFBFB', minHeight: '100vh' }}>
-        <div style={{ width: '55px', height: '55px', backgroundColor: 'black', borderRadius: '14px', margin: '0 auto 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '26px' }}>C</div>
-        <h2 style={{fontWeight: 900, fontSize: '28px', letterSpacing: '-1.5px'}}>¡Bienvenido!</h2>
-        <p style={{color: '#666', marginBottom: '30px'}}>Dinos el nombre de tu negocio para empezar:</p>
-        <input style={inputStyle} placeholder="Ej: Barbería Morales" value={nombreNuevoNegocio} onChange={e => setNombreNuevoNegocio(e.target.value)} />
-        <button onClick={crearNegocioInicial} style={buttonStyle}>CREAR MI NEGOCIO</button>
+      <div style={{ padding: '40px 20px', textAlign: 'center', fontFamily: 'sans-serif', backgroundColor: '#F0F2F5', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        
+        <div style={{ background: '#FFF', padding: '40px', borderRadius: '35px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 40px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          
+          <div style={{ width: '60px', height: '60px', backgroundColor: 'black', borderRadius: '16px', marginBottom: '25px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '28px', boxShadow: '0 10px 20px rgba(0,0,0,0.1)' }}>C</div>
+          
+          <h2 style={{ fontWeight: 900, fontSize: '28px', letterSpacing: '-1px', color: '#000', margin: '0 0 10px' }}>¡Bienvenido!</h2>
+          <p style={{ color: '#666', marginBottom: '35px', fontSize: '15px', fontWeight: 500, lineHeight: '1.4' }}>Dinos el nombre de tu negocio <br/> para configurar tu plataforma:</p>
+          
+          <div style={{ width: '100%' }}>
+            <input 
+              style={{ ...inputStyle, border: '2px solid #EEE', textAlign: 'center', fontSize: '18px', color: '#000', height: '60px' }} 
+              placeholder="Ej: Barbería Morales" 
+              value={nombreNuevoNegocio} 
+              onChange={e => setNombreNuevoNegocio(e.target.value)} 
+            />
+            <button 
+              onClick={crearNegocioInicial} 
+              style={{ ...buttonStyle, marginTop: '20px', padding: '18px', fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' }}
+            >
+              CREAR MI NEGOCIO
+            </button>
+          </div>
+        </div>
+        <p style={{ marginTop: '30px', color: '#888', fontSize: '10px', fontWeight: 900 }}>v1.0 PREMIUM ACCESS</p>
       </div>
     )
   }
 
+  // ======= DASHBOARD PRINCIPAL RENOVAADO =======
   return (
-    <div style={{ fontFamily: '-apple-system, sans-serif', padding: '40px 20px', maxWidth: '500px', margin: '0 auto', backgroundColor: '#FBFBFB', minHeight: '100vh' }}>
-      {/* HEADER, FORMULARIO Y LISTA (Exactamente tu código original) */}
-      <header style={{ textAlign: 'center', marginBottom: '30px', position: 'relative' }}>
-        <button onClick={logout} style={{ position: 'absolute', top: 0, right: 0, background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>🚪</button>
-        <div style={{ width: '55px', height: '55px', backgroundColor: 'black', borderRadius: '14px', margin: '0 auto 15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '26px' }}>C</div>
-        <h1 style={{ fontWeight: 900, fontSize: '32px', margin: 0, letterSpacing: '-1.5px' }}>{negocio?.nombre}</h1>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '10px' }}>
-          <button onClick={() => router.push('/config')} style={subBtn}>⚙️ Configurar</button>
-        </div>
+    <div style={{ fontFamily: 'sans-serif', padding: '30px 20px 100px', maxWidth: '480px', margin: '0 auto', backgroundColor: '#FBFBFB', minHeight: '100vh', position: 'relative' }}>
+      
+      {/* HEADER LIMPIO */}
+      <header style={{ textAlign: 'center', marginBottom: '35px', position: 'relative' }}>
+        <button onClick={logout} style={{ position: 'absolute', top: 0, right: 0, background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#888' }}>🚪</button>
+        
+        <div style={{ width: '50px', height: '50px', backgroundColor: 'black', borderRadius: '12px', margin: '0 auto 15px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '24px' }}>C</div>
+        
+        <h1 style={{ fontWeight: 900, fontSize: '28px', margin: 0, letterSpacing: '-1.5px', color: '#000' }}>{negocio?.nombre}</h1>
+        <p style={{ color: '#8E8E93', fontSize: '11px', fontWeight: 700, letterSpacing: '2px', margin: '5px 0 15px' }}>CLIO BUSINESS MANAGER</p>
+        
+        <button onClick={() => router.push('/config')} style={subBtn}>⚙️ CONFIGURACIÓN</button>
       </header>
 
+      {/* RESUMEN DE NEGOCIO (SIN LA BARRA GIGANTE) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '30px' }}>
-        <div style={cardStyle}><p style={labelS}>EN CAJA</p><p style={{ ...valS, color: '#34C759' }}>${totalCaja.toFixed(2)}</p></div>
-        <div style={{ ...cardStyle, background: 'black', color: 'white' }}><p style={labelS}>CITAS</p><p style={valS}>{citas.length}</p></div>
+        <div style={cardStyle}><p style={labelS}>Citas Hoy</p><p style={valS}>{citas.length}</p></div>
+        <div style={cardStyle}><p style={labelS}>Caja Semanal</p><p style={{ ...valS, color: '#34C759' }}>${totalCaja.toFixed(2)}</p></div>
       </div>
 
-      <form onSubmit={guardar} style={formStyle}>
-        <select style={inputStyle} value={form.servicio_id} onChange={e => {
-          const s = servicios.find(x => x.id == e.target.value)
-          setForm({...form, servicio_id: e.target.value, monto: s?.precio || ''})
-        }} required>
-          <option value="">Servicio</option>
-          {servicios.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </select>
-        <input style={inputStyle} placeholder="Nombre Cliente" value={form.cliente_nombre} onChange={e => setForm({...form, cliente_nombre: e.target.value})} required />
-        <input style={inputStyle} placeholder="WhatsApp" value={form.whatsapp} onChange={e => setForm({...form, whatsapp: e.target.value})} required />
-        <input style={inputStyle} type="number" placeholder="Monto $" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} required />
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-          <input type="date" style={inputStyle} value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} required />
-          <input type="time" style={inputStyle} value={form.hora} onChange={e => setForm({...form, hora: e.target.value})} required />
-        </div>
-        <button disabled={loading} style={buttonStyle}>{loading ? '...' : 'REGISTRAR'}</button>
-      </form>
+      {/* TÍTULO DE CITAS */}
+      <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 15px', color: '#000', textTransform: 'uppercase', letterSpacing: '1px' }}>Próximas Citas</h2>
 
+      {/* LISTA CITAS (LIMPIA Y PROFESIONAL) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {citas.map(c => (
           <div key={c.id} style={itemStyle}>
             <div style={{ flex: 1 }}>
               <p style={{ margin: 0, fontWeight: 800, fontSize: '15px' }}>{c.cliente_nombre}</p>
-              <p style={{ margin: 0, fontSize: '11px', color: '#8E8E93' }}>
-                {c.servicio_id?.nombre} • ${Number(c.monto).toFixed(2)}
+              <p style={{ margin: 0, fontSize: '12px', color: '#8E8E93' }}>
+                {c.servicio_id?.nombre} • <span style={{fontWeight: 700, color: '#000'}}>${Number(c.monto).toFixed(2)}</span>
               </p>
-              <p style={{ margin: '2px 0', fontSize: '10px', color: '#555' }}>{formatFechaHora(c.fecha_hora)}</p>
-              <p style={{ margin: 0, fontSize: '10px', fontWeight: 800, color: c.estado === 'pagado' ? '#34C759' : '#FF3B30' }}>{c.estado.toUpperCase()}</p>
+              <p style={{ margin: '3px 0', fontSize: '11px', color: '#555', fontWeight: 600 }}>{formatFechaHora(c.fecha_hora)}</p>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: 900, letterSpacing: '1px', color: c.estado === 'pagado' ? '#34C759' : '#FF3B30' }}>{c.estado.toUpperCase()}</p>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={() => window.open(`https://wa.me/${c.cliente_whatsapp}?text=Hola%20${encodeURIComponent(c.cliente_nombre)}`)} style={waBtn}>💬</button>
-              {c.estado === 'pendiente' && <button onClick={() => cobrar(c.id)} style={payBtn}>COBRAR</button>}
+              {c.estado === 'pendiente' && <button onClick={() => cobrarCita(c.id)} style={payBtn}>COBRAR</button>}
             </div>
           </div>
         ))}
       </div>
+
+      {/* BOTÓN FLOTANTE DE "+" (2. Elimina la barra gigante) */}
+      <button 
+        onClick={() => setMostrarForm(true)} 
+        style={{ position: 'fixed', bottom: '30px', right: '20px', width: '60px', height: '60px', backgroundColor: 'black', color: 'white', borderRadius: '50%', border: 'none', fontSize: '30px', fontWeight: 900, cursor: 'pointer', boxShadow: '0 10px 20px rgba(0,0,0,0.3)', zIndex: 1000, transition: '0.3s' }}
+      >+</button>
+
+      {/* FORMULARIO MODAL (Aparece al dar clic en "+") */}
+      {mostrarForm && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px' }}>
+          
+          <form onSubmit={guardarCita} style={formStyle}>
+            <header style={{display: 'flex', justifyContent: 'space-between', marginBottom: '20px'}}>
+              <h3 style={{margin: 0, fontWeight: 900, fontSize: '20px'}}>Nueva Cita</h3>
+              <button type="button" onClick={() => setMostrarForm(false)} style={{background: 'none', border: 'none', fontSize: '20px', color: '#888', cursor: 'pointer'}}>✖️</button>
+            </header>
+
+            <select style={inS} value={form.servicio_id} onChange={e => {
+              const s = servicios.find(x => x.id == e.target.value)
+              setForm({...form, servicio_id: e.target.value, monto: s?.precio || ''})
+            }} required>
+              <option value="">Servicio</option>
+              {servicios.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+            </select>
+            <input style={inS} placeholder="Nombre Cliente" value={form.cliente_nombre} onChange={e => setForm({...form, cliente_nombre: e.target.value})} required />
+            <input style={inS} placeholder="WhatsApp" value={form.whatsapp} onChange={e => setForm({...form, whatsapp: e.target.value})} required />
+            <input style={inS} type="number" placeholder="Monto $" value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} required />
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+              <input type="date" style={inS} value={form.fecha} onChange={e => setForm({...form, fecha: e.target.value})} required />
+              <input type="time" style={inS} value={form.hora} onChange={e => setForm({...form, hora: e.target.value})} required />
+            </div>
+            <button disabled={loading} style={buttonStyle}>{loading ? '...' : 'REGISTRAR'}</button>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
 
-// Estilos de Rubén (Intactos)
-const subBtn = { background: 'none', border: '1px solid #E5E5E7', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }
-const cardStyle = { background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #E5E5E7', textAlign: 'center' as 'center' }
-const labelS = { margin: 0, fontSize: '9px', fontWeight: 800, color: '#86868B' }
-const valS = { margin: '5px 0 0', fontWeight: 900, fontSize: '22px' }
-const formStyle = { background: 'white', padding: '20px', borderRadius: '24px', border: '1px solid #E5E5E7', marginBottom: '30px' }
-const inputStyle = { width: '100%', padding: '12px', marginBottom: '10px', borderRadius: '12px', border: '1px solid #D2D2D7', fontWeight: 600, fontSize: '14px', outline: 'none', boxSizing: 'border-box' as 'border-box' }
-const buttonStyle = { width: '100%', padding: '14px', background: 'black', color: 'white', border: 'none', borderRadius: '14px', fontWeight: 700, cursor: 'pointer' }
-const itemStyle = { background: 'white', padding: '15px', borderRadius: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #F2F2F7' }
-const waBtn = { background: '#25D366', border: 'none', width: '35px', height: '35px', borderRadius: '10px', cursor: 'pointer', fontSize: '18px', color: 'white' }
-const payBtn = { background: '#FF9500', border: 'none', padding: '8px 12px', borderRadius: '10px', fontSize: '10px', fontWeight: 800, cursor: 'pointer', color: 'white' }
+// Estilos de Rubén + Mejoras Pro
+const subBtn = { background: 'none', border: '1px solid #EEE', padding: '8px 16px', borderRadius: '12px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', color: '#000', letterSpacing: '1px' }
+const cardStyle = { background: 'white', padding: '25px', borderRadius: '25px', border: '1px solid #EEE', textAlign: 'center' as 'center', boxShadow: '0 5px 15px rgba(0,0,0,0.02)' }
+const labelS = { margin: 0, fontSize: '10px', fontWeight: 900, color: '#8E8E93', textTransform: 'uppercase', letterSpacing: '1px' }
+const valS = { margin: '8px 0 0', fontWeight: 900, fontSize: '30px', color: '#000', letterSpacing: '-1px' }
+const formStyle = { background: 'white', padding: '30px', borderRadius: '30px', width: '100%', maxWidth: '400px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)' }
+const inS = { width: '100%', padding: '16px', marginBottom: '10px', borderRadius: '15px', border: '1px solid #EEE', fontWeight: 600, fontSize: '16px', outline: 'none', boxSizing: 'border-box' as 'border-box', color: '#000' }
+const inputStyle = { width: '100%', padding: '16px', marginBottom: '10px', borderRadius: '15px', border: '1px solid #EEE', fontWeight: 600, fontSize: '16px', outline: 'none', boxSizing: 'border-box' as 'border-box', color: '#000', backgroundColor: '#FFF' }
+const buttonStyle = { width: '100%', padding: '18px', background: 'black', color: 'white', border: 'none', borderRadius: '18px', fontWeight: 800, fontSize: '14px', cursor: 'pointer' }
+const itemStyle = { background: 'white', padding: '20px', borderRadius: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #EEE', boxShadow: '0 2px 10px rgba(0,0,0,0.01)' }
+const waBtn = { background: '#25D366', border: 'none', width: '38px', height: '38px', borderRadius: '12px', cursor: 'pointer', fontSize: '20px', color: 'white' }
+const payBtn = { background: '#FF9500', border: 'none', padding: '10px 15px', borderRadius: '12px', fontSize: '10px', fontWeight: 900, cursor: 'pointer', color: 'white', letterSpacing: '1px' }
